@@ -6,4 +6,5 @@ export interface PortableTicket {
   severity?: number | null;
   escalation_pending?: boolean;
   last_activity_at: string;
+  received_at: string;
 } 

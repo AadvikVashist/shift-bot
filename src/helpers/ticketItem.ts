@@ -9,5 +9,6 @@ export function toPortableTicket(dbRow: any): PortableTicket {
     severity: dbRow.severity ?? null,
     escalation_pending: dbRow.status === 'escalation_pending',
     last_activity_at: dbRow.last_activity_at,
+    received_at: dbRow.received_at,
   };
 } 

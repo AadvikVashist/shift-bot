@@ -28,7 +28,7 @@ export default function Home() {
   return (
     <main className="container mx-auto py-10 px-4">
       <h1 className="text-2xl font-bold mb-6">ShiftBot Tickets</h1>
-      <TicketTable tickets={tickets} onRowClick={(id) => alert(id)} />
+      <TicketTable tickets={tickets} />
     </main>
   );
 }

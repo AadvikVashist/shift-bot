@@ -188,7 +188,7 @@ export class WebSocketServer {
   private async fetchAndSendLatestTickets(): Promise<void> {
     const { data: rows } = await supabaseService
       .from('tickets')
-      .select('id, status, platform, thread_id, last_activity_at')
+      .select('id, status, platform, thread_id, last_activity_at, received_at')
       .order('last_activity_at', { ascending: false })
       .limit(20);
 

@@ -60,10 +60,11 @@ function mapRows(rows: any[]): Ticket[] {
 function mapRow(row: any): Ticket {
   return {
     id: row.id,
-    status: (row.status as Ticket['status']) || 'open',
+    status: row.status || 'open',
     platform: row.platform,
     threadId: row.thread_id,
     severity: severityLabel(row.severity),
     lastActivity: row.last_activity_at,
+    receivedAt: row.received_at,
   };
 } 
