@@ -10,6 +10,8 @@
     "lint": "eslint src --ext .ts",
     "format": "prettier --write src",
     "session": "tsx scripts/gen-tg-sessions.ts",
+    "ring": "tsx tests/telegram/ring.ts",
+    "send": "tsx tests/telegram/send.ts",
     "start:mock-auth": "tsx src/mock/authServer.ts"
   },
   "dependencies": {
