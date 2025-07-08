@@ -112,6 +112,15 @@ for (const ch of telegramChannels) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Thread linking cache – allows consecutive messages in the same chat to be
+// associated with the most recent root thread when they are not explicit
+// replies. This helps capture follow-up user messages that do not use the
+// Telegram "Reply" feature but are sent shortly after the LLM answer.
+// ---------------------------------------------------------------------------
+const THREAD_CACHE_MS = 10 * 60 * 1000; // 10 minutes
+const recentThreadCache = new Map<string, { rootMsgId: number; ts: number }>();
+
 
 function attachMessageHandler(client: TelegramClient) {
   client.addEventHandler(async (ev: any) => {
@@ -167,13 +176,35 @@ function attachMessageHandler(client: TelegramClient) {
         inputPeerKey = rawChatId;
       }
 
+      // -------------------------------------------------------------
+      // Determine the root message id for the logical "thread"
+      // -------------------------------------------------------------
+      let rootMsgId: number;
+      if (raw.replyTo?.replyToMsgId !== undefined && raw.replyTo.replyToMsgId !== null) {
+          // Explicit reply → honour Telegram threading
+          rootMsgId = raw.replyTo.replyToMsgId;
+      } else {
+          // No explicit reply → try fall back to the most recent root in this chat
+          const cached = recentThreadCache.get(chatIdNormalised);
+          if (cached && ts - cached.ts < THREAD_CACHE_MS) {
+              rootMsgId = cached.rootMsgId;
+          } else {
+              // Treat this message as starting a new logical thread
+              rootMsgId = raw.id;
+          }
+      }
+
       ingestUserMessage({
         platform: 'telegram',
         userExternalId: raw.fromId?.userId?.toString() ?? 'unknown',
-        threadId: `${inputPeerKey}:${raw.replyTo?.replyToMsgId ?? raw.id}`,
+        threadId: `${inputPeerKey}:${rootMsgId}`,
         text,
         ts,
       });
+
+      // Update cache so that subsequent messages without explicit "reply"
+      // in the same chat within THREAD_CACHE_MS are linked to this root.
+      recentThreadCache.set(chatIdNormalised, { rootMsgId, ts });
     } catch (err) {
       logger.error('Telegram handler error', err);
     }
