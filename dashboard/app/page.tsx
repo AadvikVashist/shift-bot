@@ -1,19 +1,29 @@
-'use client';
-import TicketTable from '@/components/ui/TicketTable';
-import { useTicketsWS } from '@/hooks/useTicketsWS';
-import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
-import { useRouter } from 'next/navigation';
-import { LogoutButton } from '@/components/logout-button';
-import { ThemeSwitcher } from '@/components/theme-switcher';
-import { AccountInfo } from '@/components/account-info';
-import { EngineerSidebar } from '@/components/engineer-sidebar';
+"use client"
+import { 
+  Sidebar,
+  SidebarProvider,
+  SidebarContent,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
+
+
+import { AccountInfo } from "@/components/account-info";
+import { ThemeSwitcher } from "@/components/theme-switcher";
+import { LogoutButton } from "@/components/logout-button";
+import TicketTable from "@/components/ui/TicketTable";
+import { useTicketsWS } from "@/hooks/useTicketsWS";
+import { useRouter } from "next/navigation";
+import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
+import { EngineerSidebar } from "@/components/engineer-sidebar";
+
 
 export default function Home() {
   const { token, pending } = useSupabaseAuth();
   const router = useRouter();
-
+    
   // Keep hook order stable: always call useTicketsWS regardless of auth state.
-  const tickets = useTicketsWS(token ?? undefined);
+  // Fetch tickets and action handlers via WebSocket hook
+  const { tickets, closeTicket } = useTicketsWS(token ?? undefined);
 
   // If not authenticated yet, show loading; if unauthenticated redirect to login
   if (token === null) {
@@ -28,16 +38,20 @@ export default function Home() {
   if (pending) {
     return <p className="p-10">Your account is awaiting approval…</p>;
   }
-
+  
   return (
-    <main className="container mx-auto py-10 px-4">
-      <div className="flex flex-col lg:flex-row gap-8">
-        {/* Sidebar */}
-        <div className="lg:w-72">
+    <SidebarProvider>
+      <Sidebar>
+        <SidebarContent>
           <EngineerSidebar />
-        </div>
+        </SidebarContent>
+      </Sidebar>
 
-        {/* Main content area */}
+      <main className="flex-1 min-w-100vh">
+        <div className="px-4 py-2">
+          <SidebarTrigger className="h-4 w-4 mt-2" />
+        </div>
+        <div className="p-6">
         <div className="flex-1 space-y-6">
           {/* Header */}
           <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -51,9 +65,10 @@ export default function Home() {
           </header>
 
           {/* Ticket list */}
-          <TicketTable tickets={tickets} />
+          <TicketTable tickets={tickets} onCloseTicket={closeTicket} />
         </div>
-      </div>
-    </main>
-  );
+        </div>
+      </main>
+    </SidebarProvider>
+  )
 }

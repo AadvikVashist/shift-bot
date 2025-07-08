@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
+import { toast } from "sonner";
 
 export interface Engineer {
   id: string;
@@ -48,6 +49,7 @@ export function useEngineers(): UseEngineersResult {
       setError(null);
     } catch (err: any) {
       setError(err.message || "Unknown error");
+      toast.error(err.message || "Failed to fetch engineers");
     } finally {
       setLoading(false);
     }
@@ -80,6 +82,7 @@ export function useEngineers(): UseEngineersResult {
         );
       } catch (err) {
         console.error("Failed to toggle on_call", err);
+        toast.error("Failed to toggle on-call");
         await fetchEngineers();
       }
     },
@@ -106,6 +109,7 @@ export function useEngineers(): UseEngineersResult {
         );
       } catch (err) {
         console.error("Failed to toggle active", err);
+        toast.error("Failed to toggle active");
         await fetchEngineers();
       }
     },

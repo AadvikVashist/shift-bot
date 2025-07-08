@@ -1,3 +1,4 @@
+"use client"
 /* eslint-disable */
 // Enhanced TicketTable component – sortable, searchable, accessible
 import React, { useState, useMemo, useCallback } from "react";
@@ -160,8 +161,11 @@ const TicketTable: React.FC<TicketTableProps> = ({
   const formatLastActivity = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
-    const diffH = Math.floor((now.getTime() - date.getTime()) / 3600000);
-    if (diffH < 1) return "Just now";
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffH = Math.floor(diffMs / 3600000);
+    if (diffMin < 1) return "Just now";
+    if (diffH < 1) return `${diffMin}m ago`;
     if (diffH < 24) return `${diffH}h ago`;
     if (diffH < 168) return `${Math.floor(diffH / 24)}d ago`;
     return date.toLocaleDateString();

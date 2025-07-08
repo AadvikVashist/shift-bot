@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Ticket } from '@/components/ui/TicketTable';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
+import { toast } from "sonner";
 
 interface WSMessage {
   type: 'baseline' | 'new_item' | 'ping' | string;
@@ -35,6 +36,10 @@ export function useTicketsWS(authToken?: string) {
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: 'auth', data: { token } }));
+    };
+
+    ws.onerror = () => {
+      toast.error('WebSocket connection error');
     };
 
     ws.onmessage = (ev) => {
@@ -77,6 +82,7 @@ export function useTicketsWS(authToken?: string) {
         setTickets((prev) => prev.map((t) => (t.id === id ? { ...t, status: 'closed' } : t)));
       } catch (err) {
         console.error('Failed to close ticket', err);
+        toast.error('Failed to close ticket');
       }
     },
     [token, API_BASE],

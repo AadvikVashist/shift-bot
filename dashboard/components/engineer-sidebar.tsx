@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CheckCircle, PhoneCall } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Sidebar, SidebarContent } from "@/components/ui/sidebar";
 
 export function EngineerSidebar() {
   const { engineers, loading, error, toggleOnCall, toggleActive, refresh } = useEngineers();
@@ -43,8 +45,9 @@ export function EngineerSidebar() {
   }
 
   return (
-    <aside className="space-y-4">
-      <h2 className="text-lg font-semibold">Engineers</h2>
+    <Sidebar>
+      <SidebarContent className="p-2">
+        <h2 className="text-lg font-semibold">Engineers</h2>
 
       <div className="flex flex-col gap-2">
         {engineers.map((eng) => {
@@ -52,7 +55,7 @@ export function EngineerSidebar() {
           return (
             <div
               key={eng.id}
-              className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
+              className="flex items-center justify-between gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted/20"
             >
               <div className="flex flex-col">
                 <span className="font-medium text-foreground">{eng.name || eng.email}</span>
@@ -70,31 +73,48 @@ export function EngineerSidebar() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                {/* On-call toggle for any engineer */}
-                <Button
-                  size="sm"
-                  variant={eng.is_on_call ? "secondary" : "outline"}
-                  onClick={() => toggleOnCall(eng.id, !eng.is_on_call)}
-                >
-                  {eng.is_on_call ? "Unset On-Call" : "Set On-Call"}
-                </Button>
+              <div className="flex items-center gap-1">
+                {/* On-call toggle for any engineer – icon-only for compactness */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant={eng.is_on_call ? "secondary" : "outline"}
+                      onClick={() => toggleOnCall(eng.id, !eng.is_on_call)}
+                      aria-label={eng.is_on_call ? "Unset on-call" : "Set on-call"}
+                    >
+                      <PhoneCall className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    {eng.is_on_call ? "Unset On-Call" : "Set On-Call"}
+                  </TooltipContent>
+                </Tooltip>
 
-                {/* Active toggle only for current engineer */}
+                {/* Active toggle only for current engineer – icon-only for compactness */}
                 {isCurrent && (
-                  <Button
-                    size="sm"
-                    variant={eng.active ? "default" : "outline"}
-                    onClick={() => toggleActive(eng.id, !eng.active)}
-                  >
-                    {eng.active ? "Deactivate" : "Activate"}
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="icon"
+                        variant={eng.active ? "default" : "outline"}
+                        onClick={() => toggleActive(eng.id, !eng.active)}
+                        aria-label={eng.active ? "Deactivate" : "Activate"}
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">
+                      {eng.active ? "Deactivate" : "Activate"}
+                    </TooltipContent>
+                  </Tooltip>
                 )}
               </div>
             </div>
           );
         })}
       </div>
-    </aside>
+    </SidebarContent>
+    </Sidebar>
   );
 } 
