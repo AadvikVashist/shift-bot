@@ -12,11 +12,10 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
 
 export interface Ticket {
   id: string;
-  status: 'open' | 'in-progress' | 'resolved' | 'closed';
+  status: 'open' | 'in_progress' | 'resolved' | 'closed' | 'escalation_pending';
   platform: string;
   threadId: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
@@ -81,9 +80,10 @@ const TicketTable: React.FC<TicketTableProps> = ({
 
   const statusConfig = {
     open: { variant: 'destructive' as const, icon: AlertCircle, label: 'Open' },
-    'in-progress': { variant: 'default' as const, icon: Clock, label: 'In Progress' },
+    in_progress: { variant: 'default' as const, icon: Clock, label: 'In Progress' },
     resolved: { variant: 'secondary' as const, icon: CheckCircle, label: 'Resolved' },
     closed: { variant: 'outline' as const, icon: CheckCircle, label: 'Closed' },
+    escalation_pending: { variant: 'destructive' as const, icon: AlertTriangle, label: 'Escalation Pending' },
   };
   const severityConfig = {
     low: { className: 'bg-green-100 text-green-800 border-green-200', icon: CheckCircle },

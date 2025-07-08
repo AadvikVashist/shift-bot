@@ -14,11 +14,14 @@ function severityLabel(num?: number | null): Ticket['severity'] {
   return 'low';
 }
 
-export function useTicketsWS(token: string) {
+export function useTicketsWS(token?: string) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
+    // Only establish a websocket connection once we have a valid token.
+    if (!token) return;
+
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3001';
     const ws = new WebSocket(`${wsUrl}`);
     wsRef.current = ws;
@@ -57,7 +60,7 @@ function mapRows(rows: any[]): Ticket[] {
 function mapRow(row: any): Ticket {
   return {
     id: row.id,
-    status: row.status || 'open',
+    status: (row.status as Ticket['status']) || 'open',
     platform: row.platform,
     threadId: row.thread_id,
     severity: severityLabel(row.severity),

@@ -6,6 +6,7 @@ import { startTelegramIngestor } from './ingestors/telegram';
 import { startSlackIngestor } from './ingestors/slack';
 import { env } from './helpers/config/env';
 import engineersRouter from './routes/engineers';
+import { initWebSocketServer, getWebSocketServer } from './websocket/ws-server';
 
 
 const logger = Logger.create('App');
@@ -32,6 +33,14 @@ const main = async () => {
   // Initialize HTTP server
   const httpServer = http.createServer(app);
 
+  // Attach WebSocket server
+  initWebSocketServer(httpServer);
+
+  // Start HTTP server
+  httpServer.listen(port, () => {
+    logger.info(`HTTP server listening on port ${port}`);
+  });
+
   // Start Telegram ticket ingestor
   void startTelegramIngestor();
   // Start Slack ticket ingestor
@@ -40,6 +49,13 @@ const main = async () => {
   // Graceful shutdown handling
   const shutdown = async () => {
     logger.info('Received shutdown signal, closing resources...');
+    // Gracefully close WebSocket server first
+    try {
+      getWebSocketServer().shutdown();
+    } catch (err) {
+      logger.warn('WebSocket server shutdown skipped', err as any);
+    }
+
     httpServer.close();
     process.exit(0);
   };

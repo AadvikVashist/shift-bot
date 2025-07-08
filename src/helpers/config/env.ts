@@ -32,9 +32,6 @@ const RawEnvSchema = z.object({
   LLM_ENRICH_ENABLED: z.string().optional().default('1'),
   LLM_CONCURRENCY: z.string().optional().default('3'),
 
-  // Auth
-  AUTH_INTROSPECT_URL: z.string().url(),
-
   // Slack
   SLACK_BOT_TOKEN: z.string(),
   SLACK_APP_TOKEN: z.string(),
@@ -74,7 +71,4 @@ export const env = {
     concurrency: Number(parsed.LLM_CONCURRENCY),
   },
 
-  auth: {
-    introspectUrl: parsed.AUTH_INTROSPECT_URL,
-  },
 } as const;

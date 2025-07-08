@@ -57,6 +57,59 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Redirect users without linked engineer row
+  if (user) {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+        },
+      },
+    );
+
+    const { data: engineer, error } = await supabase
+      .from('engineers')
+      .select('id,email')
+      .eq('auth_user_id', user.id)
+      .maybeSingle();
+
+    console.log('Middleware check engineer', { uid: user.id, email: user.email, engineer, error });
+
+    if (!engineer) {
+      // Try to claim engineer row by email (server-side) once more in case client couldn't run yet
+      const { error: linkErr } = await supabase
+        .from('engineers')
+        .update({ auth_user_id: user.id })
+        .eq('email', user.email)
+        .is('auth_user_id', null);
+
+      console.log('Server attempt to link engineer', { linkErr });
+
+      const { data: engineerAfter } = await supabase
+        .from('engineers')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+
+      if (!engineerAfter && !request.nextUrl.pathname.startsWith('/waiting-approval')) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/waiting-approval';
+        return NextResponse.redirect(url);
+      }
+    }
+
+    // If engineer linked and user visiting waiting-approval, send to home
+    if (engineer && request.nextUrl.pathname.startsWith('/waiting-approval')) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/';
+      return NextResponse.redirect(url);
+    }
+  }
+
   // IMPORTANT: You *must* return the supabaseResponse object as it is.
   // If you're creating a new response object with NextResponse.next() make sure to:
   // 1. Pass the request in it, like so:

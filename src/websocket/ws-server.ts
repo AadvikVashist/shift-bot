@@ -30,9 +30,9 @@ export class WebSocketServer {
   private cleanupInterval: NodeJS.Timeout | null;
   private logger: Logger;
 
-  private static instance: WebSocketServer;
+  private static instance: WebSocketServer | undefined;
 
-  public static getInstance(server?: any): WebSocketServer {
+  public static getInstance(server?: any): WebSocketServer | undefined {
     if (!WebSocketServer.instance && server) {
       WebSocketServer.instance = new WebSocketServer(server);
     }
@@ -208,4 +208,26 @@ export class WebSocketServer {
   }
 }
 
-export const wsServer = WebSocketServer.getInstance();
+/**
+ * Initialise the singleton WebSocketServer instance.
+ * Must be called once with the HTTP server before any `getWebSocketServer` calls.
+ */
+export function initWebSocketServer(httpServer: any): WebSocketServer {
+  const instance = WebSocketServer.getInstance(httpServer);
+  if (!instance) {
+    throw new Error('Failed to initialise WebSocketServer');
+  }
+  return instance;
+}
+
+/**
+ * Retrieve the already-initialised WebSocketServer instance.
+ * Throws if called before `initWebSocketServer`.
+ */
+export function getWebSocketServer(): WebSocketServer {
+  const instance = WebSocketServer.getInstance();
+  if (!instance) {
+    throw new Error('WebSocketServer has not been initialised');
+  }
+  return instance;
+}
