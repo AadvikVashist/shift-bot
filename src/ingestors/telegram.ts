@@ -27,6 +27,17 @@ try {
   telegramChannels = [];
 }
 
+const allowedHandles = new Set<string>();
+const allowedChatIds = new Set<string>();
+
+// Populate allowedHandles from config immediately
+for (const ch of telegramChannels) {
+  if (ch.handle) {
+    const normalized = ch.handle.replace(/^@/, '').toLowerCase();
+    allowedHandles.add(normalized);
+  }
+}
+
 async function syncSeedChannels(client: TelegramClient) {
   logger.info(`Syncing ${telegramChannels.length} Telegram channels`);
   for (const seed of telegramChannels) {
@@ -70,6 +81,10 @@ async function syncSeedChannels(client: TelegramClient) {
       const title = entity?.title ?? handle;
       if (!chatId) {
         logger.warn('[seed] missing chatId for', handle);
+      }
+      // Cache chatId as allowed if obtained
+      if (chatId) {
+        allowedChatIds.add(normalizeChatId(chatId));
       }
       // Note: no DB source upsert needed for support schema (handled elsewhere)
     } catch (err) {
@@ -144,6 +159,17 @@ function attachMessageHandler(client: TelegramClient) {
       let handle: string | null | undefined = raw.chat?.username;
       if (!handle) {
         handle = await resolveUsername(client, chatId);
+      }
+      if (handle) {
+        handle = handle.replace(/^@/, '').toLowerCase();
+      }
+
+      // Filter: message must originate from configured source
+      const fromAllowedChat = allowedChatIds.has(chatId);
+      const fromAllowedHandle = handle ? allowedHandles.has(handle) : false;
+      if (!fromAllowedChat && !fromAllowedHandle) {
+        logger.debug('Skipping message from unconfigured chat', { chatId, handle, text });
+        return;
       }
 
       const title = raw.chat?.title ?? handle ?? chatId;

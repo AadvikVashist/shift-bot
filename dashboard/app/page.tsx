@@ -3,6 +3,10 @@ import TicketTable from '@/components/ui/TicketTable';
 import { useTicketsWS } from '@/hooks/useTicketsWS';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { useRouter } from 'next/navigation';
+import { LogoutButton } from '@/components/logout-button';
+import { ThemeSwitcher } from '@/components/theme-switcher';
+import { AccountInfo } from '@/components/account-info';
+import { EngineerSidebar } from '@/components/engineer-sidebar';
 
 export default function Home() {
   const { token, pending } = useSupabaseAuth();
@@ -27,8 +31,29 @@ export default function Home() {
 
   return (
     <main className="container mx-auto py-10 px-4">
-      <h1 className="text-2xl font-bold mb-6">ShiftBot Tickets</h1>
-      <TicketTable tickets={tickets} />
+      <div className="flex flex-col lg:flex-row gap-8">
+        {/* Sidebar */}
+        <div className="lg:w-72">
+          <EngineerSidebar />
+        </div>
+
+        {/* Main content area */}
+        <div className="flex-1 space-y-6">
+          {/* Header */}
+          <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <h1 className="text-2xl font-bold">ShiftBot Tickets</h1>
+
+            <div className="flex items-center gap-2 sm:gap-4">
+              <AccountInfo />
+              <ThemeSwitcher />
+              <LogoutButton />
+            </div>
+          </header>
+
+          {/* Ticket list */}
+          <TicketTable tickets={tickets} />
+        </div>
+      </div>
     </main>
   );
 }
