@@ -1,15 +1,15 @@
 import WebSocket from 'ws';
 import { WebSocketSession } from './ws-session';
 import { v4 as uuidv4 } from 'uuid';
-import { PortableNewsItem } from '../types/news';
+import { PortableTicket } from '../types/ticket';
 import supabaseService from '../helpers/supabase/client';
-import { enrichNewsRow } from '../helpers/newsItem';
+import { toPortableTicket } from '../helpers/ticketItem';
 import { verifyToken } from '../helpers/auth/verifier';
 import { Logger } from '../helpers/logger';
 
-interface NewsData {
+interface TicketData {
   type: WebSocketMessageType;
-  data: PortableNewsItem[] | PortableNewsItem;
+  data: PortableTicket[] | PortableTicket;
 }
 
 export enum WebSocketMessageType {
@@ -119,7 +119,7 @@ export class WebSocketServer {
       });
       this.logger.info('User authenticated', { userId });
 
-      await this.fetchAndSendLatestNews();
+      await this.fetchAndSendLatestTickets();
     } catch (error) {
       this.logger.error('Failed to handle auth', error);
       session.sendMessage({
@@ -146,23 +146,23 @@ export class WebSocketServer {
     this.sessions.delete(sessionId);
   }
 
-  public broadcastNews(newsItems: PortableNewsItem | PortableNewsItem[]): void {
-    let newsData: NewsData;
-    if (Array.isArray(newsItems)) {
-      newsData = {
+  public broadcastTickets(tickets: PortableTicket | PortableTicket[]): void {
+    let payload: TicketData;
+    if (Array.isArray(tickets)) {
+      payload = {
         type: WebSocketMessageType.BASELINE,
-        data: newsItems,
+        data: tickets,
       };
     } else {
-      newsData = {
+      payload = {
         type: WebSocketMessageType.NEW_ITEM,
-        data: newsItems,
+        data: tickets,
       };
     }
 
     for (const session of this.sessions.values()) {
       if (session.isAuthenticated) {
-        session.sendMessage(newsData);
+        session.sendMessage(payload);
       }
     }
   }
@@ -185,17 +185,15 @@ export class WebSocketServer {
     }
   }
 
-  private async fetchAndSendLatestNews(): Promise<void> {
-    const { data: items } = await supabaseService
-      .from('news_items')
-      .select(
-        '*, news_sources!inner(id, platform, title, source_uid, handle, source_name)',
-      )
-      .order('created_at', { ascending: false })
+  private async fetchAndSendLatestTickets(): Promise<void> {
+    const { data: rows } = await supabaseService
+      .from('tickets')
+      .select('id, status, platform, thread_id, last_activity_at')
+      .order('last_activity_at', { ascending: false })
       .limit(20);
 
-    const enriched = (items ?? []).map(enrichNewsRow);
-    this.broadcastNews(enriched);
+    const portable = (rows ?? []).map(toPortableTicket);
+    this.broadcastTickets(portable);
   }
 
   public shutdown(): void {

@@ -1,7 +1,14 @@
 import WebSocket from 'ws';
 
-interface NewsData {
-  // Define news data structure later
+/**
+ * TicketMessage – payloads exchanged over WebSocket.
+ * Defined here to avoid circular import with ws-server.ts.
+ * Structure mirrors the object assembled in ws-server:
+ *   { type: 'baseline' | 'new_item' | 'ping' | 'error' | 'auth', data: any }
+ */
+interface TicketMessage {
+  type: string;
+  data: unknown;
 }
 
 export class WebSocketSession {
@@ -29,7 +36,7 @@ export class WebSocketSession {
     return this.lastPing;
   }
 
-  public sendMessage(data: NewsData): void {
+  public sendMessage(data: TicketMessage): void {
     if (this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data));
     }

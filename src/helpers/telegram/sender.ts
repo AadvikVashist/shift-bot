@@ -1,6 +1,15 @@
 import { Logger } from '../logger';
 import { getTelegramClient } from './client';
 
+/**
+ * Telegram reply helper
+ * ---------------------
+ * Sends a plain-text reply into a Telegram chat using the shared MTProto client.
+ *   • `chatId` is the numeric channel / group id as a string.
+ *   • `replyToMsgId` refers to the root/support message to keep threading.
+ *   • No retry logic here; caller decides if/when to retry.
+ */
+
 const logger = Logger.create('TgSender');
 
 export async function sendTelegramReply(

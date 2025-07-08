@@ -18,9 +18,9 @@ export type Database = {
       graphql: {
         Args: {
           operationName?: string
-          query?: string
           variables?: Json
           extensions?: Json
+          query?: string
         }
         Returns: Json
       }
@@ -34,183 +34,151 @@ export type Database = {
   }
   public: {
     Tables: {
-      app_users: {
+      engineers: {
         Row: {
-          connection_count: number
-          first_seen: string
+          auth_user_id: string | null
+          created_at: string
+          email: string
           id: string
-          last_seen: string
-          total_messages: number
+          is_on_call: boolean
+          name: string
+          phone_number: string | null
+          slack_id: string | null
+          telegram_id: string | null
+          updated_at: string
         }
         Insert: {
-          connection_count?: number
-          first_seen?: string
-          id: string
-          last_seen?: string
-          total_messages?: number
+          auth_user_id?: string | null
+          created_at?: string
+          email: string
+          id?: string
+          is_on_call?: boolean
+          name: string
+          phone_number?: string | null
+          slack_id?: string | null
+          telegram_id?: string | null
+          updated_at?: string
         }
         Update: {
-          connection_count?: number
-          first_seen?: string
+          auth_user_id?: string | null
+          created_at?: string
+          email?: string
           id?: string
-          last_seen?: string
-          total_messages?: number
+          is_on_call?: boolean
+          name?: string
+          phone_number?: string | null
+          slack_id?: string | null
+          telegram_id?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
-      news_items: {
+      ticket_actions: {
         Row: {
-          analysis: string | null
-          body: string | null
-          coins: string[] | null
+          action_type: Database["public"]["Enums"]["action_type"]
+          actor_engineer_id: string | null
+          actor_external_id: string | null
+          content: string | null
           created_at: string
-          fetched_at: string
-          hash: string | null
+          escalation_method:
+            | Database["public"]["Enums"]["escalation_method"]
+            | null
+          escalation_needed: boolean | null
           id: string
-          llm_enriched: boolean
-          llm_response: Json | null
-          llm_thinking: string | null
-          raw_payload: Json | null
-          relevance: number | null
-          sentiment: number
-          source_id: string
-          strength: number | null
-          title: string | null
-          topics: string[] | null
+          retry_count: number
+          severity: number | null
+          thinking_data: Json | null
+          ticket_id: string
         }
         Insert: {
-          analysis?: string | null
-          body?: string | null
-          coins?: string[] | null
+          action_type: Database["public"]["Enums"]["action_type"]
+          actor_engineer_id?: string | null
+          actor_external_id?: string | null
+          content?: string | null
           created_at?: string
-          fetched_at?: string
-          hash?: string | null
+          escalation_method?:
+            | Database["public"]["Enums"]["escalation_method"]
+            | null
+          escalation_needed?: boolean | null
           id?: string
-          llm_enriched?: boolean
-          llm_response?: Json | null
-          llm_thinking?: string | null
-          raw_payload?: Json | null
-          relevance?: number | null
-          sentiment?: number
-          source_id: string
-          strength?: number | null
-          title?: string | null
-          topics?: string[] | null
+          retry_count?: number
+          severity?: number | null
+          thinking_data?: Json | null
+          ticket_id: string
         }
         Update: {
-          analysis?: string | null
-          body?: string | null
-          coins?: string[] | null
+          action_type?: Database["public"]["Enums"]["action_type"]
+          actor_engineer_id?: string | null
+          actor_external_id?: string | null
+          content?: string | null
           created_at?: string
-          fetched_at?: string
-          hash?: string | null
+          escalation_method?:
+            | Database["public"]["Enums"]["escalation_method"]
+            | null
+          escalation_needed?: boolean | null
           id?: string
-          llm_enriched?: boolean
-          llm_response?: Json | null
-          llm_thinking?: string | null
-          raw_payload?: Json | null
-          relevance?: number | null
-          sentiment?: number
-          source_id?: string
-          strength?: number | null
-          title?: string | null
-          topics?: string[] | null
+          retry_count?: number
+          severity?: number | null
+          thinking_data?: Json | null
+          ticket_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "news_items_source_id_fkey"
-            columns: ["source_id"]
+            foreignKeyName: "ticket_actions_actor_engineer_id_fkey"
+            columns: ["actor_engineer_id"]
             isOneToOne: false
-            referencedRelation: "news_sources"
+            referencedRelation: "engineers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ticket_actions_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "tickets"
             referencedColumns: ["id"]
           },
         ]
       }
-      news_source_subscriptions: {
+      tickets: {
         Row: {
-          source_id: string
-          subscribed_at: string
-          user_id: string
-        }
-        Insert: {
-          source_id: string
-          subscribed_at?: string
-          user_id: string
-        }
-        Update: {
-          source_id?: string
-          subscribed_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "news_source_subscriptions_source_id_fkey"
-            columns: ["source_id"]
-            isOneToOne: false
-            referencedRelation: "news_sources"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "news_source_subscriptions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "app_users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      news_sources: {
-        Row: {
-          created_at: string
-          creator_id: string | null
-          description: string | null
-          extra: Json | null
-          handle: string | null
+          current_engineer_id: string | null
           id: string
-          is_active: boolean
-          platform: string
-          source_name: string | null
-          source_uid: string
-          title: string | null
+          last_activity_at: string
+          platform: Database["public"]["Enums"]["platform"]
+          received_at: string
+          status: Database["public"]["Enums"]["ticket_status"]
+          thread_id: string | null
           updated_at: string
-          visibility: string
+          user_external_id: string
         }
         Insert: {
-          created_at?: string
-          creator_id?: string | null
-          description?: string | null
-          extra?: Json | null
-          handle?: string | null
+          current_engineer_id?: string | null
           id?: string
-          is_active?: boolean
-          platform: string
-          source_name?: string | null
-          source_uid: string
-          title?: string | null
+          last_activity_at?: string
+          platform: Database["public"]["Enums"]["platform"]
+          received_at?: string
+          status?: Database["public"]["Enums"]["ticket_status"]
+          thread_id?: string | null
           updated_at?: string
-          visibility?: string
+          user_external_id: string
         }
         Update: {
-          created_at?: string
-          creator_id?: string | null
-          description?: string | null
-          extra?: Json | null
-          handle?: string | null
+          current_engineer_id?: string | null
           id?: string
-          is_active?: boolean
-          platform?: string
-          source_name?: string | null
-          source_uid?: string
-          title?: string | null
+          last_activity_at?: string
+          platform?: Database["public"]["Enums"]["platform"]
+          received_at?: string
+          status?: Database["public"]["Enums"]["ticket_status"]
+          thread_id?: string | null
           updated_at?: string
-          visibility?: string
+          user_external_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "news_sources_creator_id_fkey"
-            columns: ["creator_id"]
+            foreignKeyName: "tickets_current_engineer_id_fkey"
+            columns: ["current_engineer_id"]
             isOneToOne: false
-            referencedRelation: "app_users"
+            referencedRelation: "engineers"
             referencedColumns: ["id"]
           },
         ]
@@ -223,7 +191,21 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      action_type:
+        | "user_message"
+        | "llm_answer"
+        | "escalation_call"
+        | "engineer_note"
+        | "system_event"
+      escalation_method: "telegram_voice" | "phone_call"
+      platform: "telegram" | "slack"
+      ticket_status:
+        | "open"
+        | "auto_answered"
+        | "awaiting_feedback"
+        | "escalation_pending"
+        | "escalated"
+        | "closed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -341,7 +323,25 @@ export const Constants = {
     Enums: {},
   },
   public: {
-    Enums: {},
+    Enums: {
+      action_type: [
+        "user_message",
+        "llm_answer",
+        "escalation_call",
+        "engineer_note",
+        "system_event",
+      ],
+      escalation_method: ["telegram_voice", "phone_call"],
+      platform: ["telegram", "slack"],
+      ticket_status: [
+        "open",
+        "auto_answered",
+        "awaiting_feedback",
+        "escalation_pending",
+        "escalated",
+        "closed",
+      ],
+    },
   },
 } as const
 

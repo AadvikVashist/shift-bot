@@ -5,6 +5,7 @@ import { Logger } from './helpers/logger';
 import { startTelegramIngestor } from './ingestors/telegram';
 import { startSlackIngestor } from './ingestors/slack';
 import { env } from './helpers/config/env';
+import engineersRouter from './routes/engineers';
 
 
 const logger = Logger.create('App');
@@ -24,14 +25,16 @@ const main = async () => {
   // Basic health check route
   app.get('/health', (_, res) => res.send('OK'));
 
+  // Engineers management API
+  app.use('/engineers', engineersRouter);
 
 
   // Initialize HTTP server
   const httpServer = http.createServer(app);
 
-  // Start Telegram news ingestor
+  // Start Telegram ticket ingestor
   void startTelegramIngestor();
-  // Start Slack news ingestor
+  // Start Slack ticket ingestor
   void startSlackIngestor();
 
   // Graceful shutdown handling

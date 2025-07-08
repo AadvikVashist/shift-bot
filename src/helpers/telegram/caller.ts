@@ -1,3 +1,16 @@
+/**
+ * Telegram voice caller
+ * ---------------------
+ * Places a one-way outgoing MTProto voice call that simply rings the recipient
+ * and disconnects after 20 s. It intentionally never completes the Diffie-Hellman
+ * handshake, so no audio is exchanged – the goal is only to trigger Telegram’s
+ * native ringtone (high-visibility escalation signal).
+ *
+ * Implementation notes:
+ *   • Mirrors the protocol used by Telegram Desktop (layer 93).
+ *   • Uses low-level phone.requestCall & phone.discardCall RPCs.
+ *   • Cryptographic helper functions borrowed from telegram/Helpers.
+ */
 import { Api } from 'telegram';
 import bigInt from 'big-integer';
 import {

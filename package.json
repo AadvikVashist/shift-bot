@@ -1,7 +1,7 @@
 {
-  "name": "news-server",
+  "name": "Klyra-Shift-Bot",
   "version": "1.0.0",
-  "description": "News ingestion and WebSocket server for crypto news",
+  "description": "Shift bot for Klyra",
   "main": "dist/app.js",
   "scripts": {
     "start": "node dist/app.js",
