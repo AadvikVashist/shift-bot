@@ -1,82 +1,77 @@
 import { TelegramClient } from 'telegram';
-import { StringSession } from 'telegram/sessions';
+// client provided via helper
 import { NewMessage } from 'telegram/events';
 import { Logger } from '../helpers/logger';
-import telegramSeeds from '../seed/telegram';
-import { supabaseService } from '../helpers/supabase/client';
+import fs from 'fs';
+import path from 'path';
 import { Api } from 'telegram';
-import { ingestRawNews } from './ingest';
-import { env } from '../helpers/config/env';
+import { ingestUserMessage } from './ingest';
+import { getTelegramClient } from '../helpers/telegram/client';
 
 const logger = Logger.create('TelegramIngestor');
 
-const { apiId, apiHash, session } = env.telegram;
+let client: TelegramClient; // will be initialised in startTelegramIngestor
 
-if (!apiId || !apiHash || !session) {
-  throw new Error('Missing required Telegram API credentials');
+// load unified sources config
+const sourcesPath = path.join(__dirname, '../config/sources.json');
+interface SourceCfg { platform: string; handle?: string; name?: string; active?: boolean }
+let telegramChannels: Array<SourceCfg & { handle: string }> = [];
+try {
+  const raw = JSON.parse(fs.readFileSync(sourcesPath, 'utf-8')) as SourceCfg[];
+  telegramChannels = raw.filter(
+    (s): s is SourceCfg & { handle: string } => s.platform === 'telegram' && !!s.handle && (s.active ?? true),
+  );
+  logger.info(`Loaded ${telegramChannels.length} active Telegram channels from config`);
+} catch (err) {
+  logger.warn('Failed to load sources.json', err);
+  telegramChannels = [];
 }
 
-const client = new TelegramClient(
-  new StringSession(session),
-  apiId,
-  apiHash,
-  { connectionRetries: 5 },
-);
-
-// Upsert a Telegram news source using numeric chatId as source_uid and storing
-// the public username in the new `handle` column.
-async function upsertNewsSource(params: {
-  chatId: string;
-  handle: string | null;
-  title: string | null;
-  isActive: boolean;
-  visibility: 'system' | 'public' | 'private';
-}) {
-  const { chatId, handle, title, isActive, visibility } = params;
-  await supabaseService
-    .from('news_sources')
-    .upsert({
-      platform: 'telegram',
-      source_uid: chatId,
-      handle, // new nullable column
-      source_name: handle ? `@${handle}` : title ?? chatId,
-      title: title ?? handle ?? chatId,
-      is_active: isActive,
-      visibility,
-    }, { onConflict: 'platform,source_uid' });
-}
-
-async function syncSeedChannels() {
-  logger.info(`Syncing ${telegramSeeds.length} Telegram channels`);
-  for (const seed of telegramSeeds) {
-    const { handle } = seed;
+async function syncSeedChannels(client: TelegramClient) {
+  logger.info(`Syncing ${telegramChannels.length} Telegram channels`);
+  for (const seed of telegramChannels) {
+    const { handle, name } = seed;
     let active = seed.active !== false; // default true unless explicitly false
+
+    // First resolve the handle – this tells us whether it is a Channel / Super-group, Group or User
+    let entity: any = null;
     try {
-      await client.invoke(new Api.channels.JoinChannel({ channel: handle }));
-      logger.info('[seed] joined', handle);
-    } catch (err: any) {
-      const msg = err?.message ?? '';
-      if (!msg.includes('USER_ALREADY_PARTICIPANT')) {
-        logger.warn('[seed] failed to join', handle, msg);
-        active = false;
-      }
+      entity = await client.getEntity(handle);
+    } catch (err) {
+      logger.warn('[seed] failed to resolve entity for', handle, err);
     }
-    // Resolve entity to get numeric chat ID and title
+
+    const isJoinableChannel = entity && 'channelId' in entity; // Channels & super-groups expose channelId
+
+    if (isJoinableChannel) {
+      // Attempt to join only if we are dealing with a channel / super-group
+      try {
+        await client.invoke(new Api.channels.JoinChannel({ channel: handle }));
+        logger.info('[seed] joined', handle);
+      } catch (err: any) {
+        const msg = err?.message ?? '';
+        if (!msg.includes('USER_ALREADY_PARTICIPANT')) {
+          // Any other error means the channel isn’t available for this account → deactivate
+          logger.warn('[seed] failed to join', handle, msg);
+          active = false;
+        }
+      }
+    } else {
+      // Not a public channel – nothing to join, but we still treat it as active so we can ingest messages
+      logger.debug('[seed] handle not joinable (likely user or basic group), skipping join', handle);
+    }
+
+    // Ensure we have a numeric chatId & title for reference
     try {
-      const entity: any = await client.getEntity(handle);
+      if (!entity) {
+        entity = await client.getEntity(handle);
+      }
       const chatId = entity?.id ? entity.id.toString() : undefined;
       const title = entity?.title ?? handle;
-      if (chatId) {
-        await upsertNewsSource({
-          chatId,
-          handle,
-          title,
-          isActive: active,
-          visibility: 'system',
-        });
-      } else {
+      if (!chatId) {
         logger.warn('[seed] missing chatId for', handle);
       }
+      // Note: no DB source upsert needed for support schema (handled elsewhere)
     } catch (err) {
       logger.debug('[seed] failed to resolve entity for', handle, err);
     }
@@ -86,7 +81,7 @@ async function syncSeedChannels() {
 // Cache chatId → username lookups to avoid hitting Telegram API repeatedly
 const chatIdUsernameCache = new Map<string, string>();
 
-async function resolveUsername(chatId: string): Promise<string | null> {
+async function resolveUsername(client: TelegramClient, chatId: string): Promise<string | null> {
   if (chatIdUsernameCache.has(chatId)) return chatIdUsernameCache.get(chatId)!;
   try {
     const entity = await client.getEntity(chatId);
@@ -125,9 +120,10 @@ const normalizeChatId = (id: string): string => {
   return id;
 };
 
-function attachMessageHandler() {
+function attachMessageHandler(client: TelegramClient) {
   client.addEventHandler(async (ev: any) => {
     try {
+      console.log('Telegram message received', ev);
       const raw = ev.message as any;
       if (!raw?.message) return; // guard: no text content
 
@@ -147,15 +143,15 @@ function attachMessageHandler() {
       // Attempt to resolve @handle – first via payload, then via cache/API
       let handle: string | null | undefined = raw.chat?.username;
       if (!handle) {
-        handle = await resolveUsername(chatId);
+        handle = await resolveUsername(client, chatId);
       }
 
       const title = raw.chat?.title ?? handle ?? chatId;
 
-      ingestRawNews({
+      ingestUserMessage({
         platform: 'telegram',
-        sourceUid: chatId,
-        sourceTitle: title,
+        userExternalId: raw.fromId?.userId?.toString() ?? 'unknown',
+        threadId: `${chatId}:${raw.replyTo?.replyToMsgId ?? raw.id}`,
         text,
         ts,
       });
@@ -166,8 +162,8 @@ function attachMessageHandler() {
 }
 
 export async function startTelegramIngestor() {
-  await client.connect();
-  await syncSeedChannels();
-  attachMessageHandler();
+  client = await getTelegramClient();
+  await syncSeedChannels(client);
+  attachMessageHandler(client);
   logger.info('Telegram ingestor running');
 } 

@@ -5,14 +5,13 @@ import { Logger } from './helpers/logger';
 import { startTelegramIngestor } from './ingestors/telegram';
 import { startSlackIngestor } from './ingestors/slack';
 import { env } from './helpers/config/env';
-import { WebSocketServer } from './websocket/ws-server';
-import newsRouter from './routes/news';
+
 
 const logger = Logger.create('App');
 const port = env.port;
 
 const main = async () => {
-  logger.info(`Starting News Server on port ${port}...`);
+  logger.info(`Starting shift-bot on port ${port}...`);
 
   const app = express();
 
@@ -25,19 +24,10 @@ const main = async () => {
   // Basic health check route
   app.get('/health', (_, res) => res.send('OK'));
 
-  // News routes (protected)
-  app.use('/news', newsRouter);
+
 
   // Initialize HTTP server
   const httpServer = http.createServer(app);
-
-  // Start HTTP server
-  httpServer.listen(port, async () => {
-    logger.info(`Server started at [http://localhost:${port}]`);
-
-    // Initialize WebSocket server with the HTTP server
-    WebSocketServer.getInstance(httpServer);
-  });
 
   // Start Telegram news ingestor
   void startTelegramIngestor();

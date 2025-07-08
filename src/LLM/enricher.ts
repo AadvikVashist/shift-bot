@@ -1,21 +1,25 @@
 import { Logger } from '../helpers/logger';
 import { supabaseService } from '../helpers/supabase/client';
-import { WebSocketServer } from '../websocket/ws-server';
+import { escalateTicket } from '../helpers/escalation/escalator';
+import { sendTelegramReply } from '../helpers/telegram/sender';
 import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import pLimit from 'p-limit';
 import { env } from '../helpers/config/env';
-import { getTelegramDigestPrompt } from './prompts/telegramDigestPrompt';
+import { getTicketTriagePrompt } from './prompts/ticketTriagePrompt';
 
 /**
- * Lightweight, in-process LLM enrichment helper.
- * -------------------------------------------------
- *  • Exposes `enqueueEnrichment(rowId, text, platform)` – returns immediately.
- *  • Runs a concurrency-limited background queue so ingest speed isn't blocked.
- *  • Uses the service-role Supabase client; failures are logged, never thrown.
+ * Inline LLM ticket triage + auto-reply helper
+ * --------------------------------------------
+ * ‣ `enqueueEnrichment({ticketId, text, platform})` runs a concurrency-limited queue.
+ * ‣ Inserts an `llm_answer` row into `ticket_actions` and updates ticket status.
+ * ‣ Never throws to caller – all errors logged internally.
  */
 
-const logger = Logger.create('LLMEnricherInline');
+// ---------------------------------------------------------------------------
+// Config / setup
+// ---------------------------------------------------------------------------
+const logger = Logger.create('LLMEnricher');
 
 const {
   apiKey: GEMINI_API_KEY,
@@ -25,147 +29,138 @@ const {
 } = env.gemini;
 
 const ENABLED = GEMINI_ENABLED;
-
 if (!ENABLED) logger.warn('Inline LLM enrichment disabled via env flags');
 
-// Initialise Gemini only if enabled
+// Initialise Gemini only if enabled so local dev works offline
 const gemini = ENABLED ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
-// Zod validation schema (trimmed for brevity – identical to worker)
-const llmDigestItemSchema = z.object({
-  title: z.string().max(150),
-  body: z.string().max(800),
-  sentiment: z.enum(['bullish', 'bearish', 'neutral']),
-  coins: z.array(z.string()),
-  analysis: z.string().max(1200),
-  strength: z.number().min(0).max(1),
-  relevance: z.number().min(0).max(1),
-  topics: z.array(z.string()),
+// ---------------------------------------------------------------------------
+// Schema & types
+// ---------------------------------------------------------------------------
+const triageSchema = z.object({
+  answer: z.string().max(500),
+  severity: z.number().min(0).max(1),
+  escalation: z.boolean(),
 });
-const llmDigestSchema = z.object({ digest: z.array(llmDigestItemSchema) });
-
-type LlmDigest = z.infer<typeof llmDigestSchema>;
-
-interface SummaryResult {
-  digest: LlmDigest;
-  thinking: string | null;
-  rawResponse: any; // full Gemini API payload (plain JSON-serialisable)
-}
-
-// Concurrency limiter
-const limit = pLimit(LLM_CONCURRENCY_NUM);
-
-// Previously we validated against a static list of crypto tickers.
-// For the current bug-tracking context this is unnecessary, so we omit the list.
-
-async function generateSummary(
-  text: string,
-  platform: string,
-): Promise<SummaryResult> {
-  if (!gemini) throw new Error('Gemini disabled');
-
-  // ✨ future: choose prompt per platform
-  const SYSTEM_PROMPT = getTelegramDigestPrompt('');
-
-  const response: any = await (gemini as any).models.generateContent({
-    model: GEMINI_MODEL,
-    contents: [{ role: 'user', parts: [{ text }] }],
-    config: {
-      thinkingConfig: {
-        thinkingBudget: 8000,
-        includeThoughts: true, // capture summarised chain-of-thought
-      },
-      temperature: 0.25,
-      topP: 1,
-      responseMimeType: 'application/json',
-      systemInstruction: [{ text: SYSTEM_PROMPT }],
-    },
-  });
-
-  const parts = response?.candidates?.[0]?.content?.parts ?? [];
-
-  // Extract JSON answer part (the one not flagged as thought)
-  const answerPart = parts.find((p: any) => p && p.text && !p.thought) ?? {};
-  const rawJson = answerPart.text ?? '';
-
-  // Extract thought summaries
-  const thinkingTexts = parts
-    .filter((p: any) => p?.thought && p.text)
-    .map((p: any) => (p.text as string).trim());
-  const thinking = thinkingTexts.length ? thinkingTexts.join('\n\n') : null;
-
-  const digest = llmDigestSchema.parse(JSON.parse(rawJson));
-
-  // Deep-clone plain JSON to ensure serialisable (strip functions, bigint, etc.)
-  const rawResponse = JSON.parse(JSON.stringify(response));
-
-  return { digest, thinking, rawResponse };
-}
+export type TicketTriage = z.infer<typeof triageSchema>;
 
 export interface EnqueueArgs {
-  rowId: string;
-  text: string;
-  platform: string;
+  ticketId: string;
+  text: string;       // latest user message text
+  platform: 'slack' | 'telegram';
 }
+
+// ---------------------------------------------------------------------------
+// Public API – enqueue
+// ---------------------------------------------------------------------------
+const limit = pLimit(LLM_CONCURRENCY_NUM);
 
 export function enqueueEnrichment(args: EnqueueArgs): Promise<void> {
   if (!ENABLED) return Promise.resolve();
-  if (args.platform !== 'telegram') return Promise.resolve();
-  return limit(() => enrich(args)).catch((err: unknown) => {
-    logger.error('Enqueue fail', err);
+  return limit(() => enrich(args)).catch((err) => {
+    logger.error('enqueueEnrichment failed', err);
     return Promise.resolve();
   });
 }
 
-async function enrich({ rowId, text, platform }: EnqueueArgs): Promise<void> {
-  console.log('Enriching', rowId);
+// ---------------------------------------------------------------------------
+// Core enrichment logic
+// ---------------------------------------------------------------------------
+async function enrich({ ticketId, text, platform }: EnqueueArgs): Promise<void> {
   try {
-    const { digest, thinking, rawResponse } = await generateSummary(
-      text,
-      platform,
-    );
-    const d = digest.digest[0];
+    // 1️⃣  Invoke Gemini
+    const SYSTEM_PROMPT = getTicketTriagePrompt();
 
-    // Keep uppercase deduplicated list (no external validation)
-    const validCoins = Array.from(new Set(d.coins.map((c) => c.toUpperCase())));
+    const response: any = await (gemini as any).models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [
+        { role: 'user', parts: [{ text }] },
+      ],
+      config: {
+        thinkingConfig: {
+          thinkingBudget: 4000,
+          includeThoughts: true,
+        },
+        temperature: 0.3,
+        topP: 1,
+        responseMimeType: 'application/json',
+        systemInstruction: [{ text: SYSTEM_PROMPT }],
+      },
+    });
 
-    const { data: updatedItem, error } = await supabaseService
-      .from('news_items')
-      .update({
-        llm_enriched: true,
-        title: d.title,
-        body: d.body,
-        sentiment:
-          d.sentiment === 'bullish' ? 1 : d.sentiment === 'bearish' ? 0 : 0.5,
-        relevance: d.relevance,
-        strength: d.strength,
-        coins: validCoins,
-        topics: d.topics,
-        analysis: d.analysis,
-        llm_thinking: thinking,
-        llm_response: rawResponse,
-      })
-      .eq('id', rowId)
-      .select(
-        '*, news_sources!inner(id, platform, title, source_uid, handle, source_name)',
-      )
-      .single();
+    const parts = response?.candidates?.[0]?.content?.parts ?? [];
+    const answerPart = parts.find((p: any) => p && p.text && !p.thought) ?? {};
+    const rawJson = answerPart.text ?? '';
 
-    if (error) throw error;
+    const thinkingTexts = parts
+      .filter((p: any) => p?.thought && p.text)
+      .map((p: any) => (p.text as string).trim());
+    const thinking = thinkingTexts.length ? thinkingTexts.join('\n\n') : null;
 
-    if (updatedItem) {
-      const source = updatedItem.news_sources;
-      const portableItem = {
-        ...updatedItem,
-        platform: source.platform,
-        source_title: source.title,
-        source_uid: source.handle || source.source_uid,
-      };
-      console.log('Broadcasting enriched item', portableItem);
-      WebSocketServer.getInstance()?.broadcastNews(portableItem);
-    }
-    logger.info('Enriched row', rowId);
+    const parsed: TicketTriage = triageSchema.parse(JSON.parse(rawJson));
+
+    // 2️⃣  Persist to DB
+    await persistResults({ ticketId, triage: parsed, thinking });
+
+    logger.info('Enriched ticket', { ticketId, severity: parsed.severity });
   } catch (err) {
-    logger.error('Enrichment failed', rowId, err);
+    logger.error('enrich failed', { ticketId, err });
+  }
+}
+
+async function persistResults({
+  ticketId,
+  triage,
+  thinking,
+}: {
+  ticketId: string;
+  triage: TicketTriage;
+  thinking: string | null;
+}): Promise<void> {
+  // Insert ticket_actions row
+  const { error: insertErr } = await (supabaseService as any)
+    .from('ticket_actions')
+    .insert({
+      ticket_id: ticketId,
+      action_type: 'llm_answer',
+      escalation_needed: triage.escalation,
+      severity: triage.severity,
+      content: triage.answer,
+      thinking_data: thinking ? { t: thinking } : null,
+    });
+  if (insertErr) {
+    logger.error('Failed to insert llm_answer action', insertErr);
+  }
+
+  // Update ticket status based on escalation flag
+  const newStatus = triage.escalation ? 'escalation_pending' : 'auto_answered';
+  const { error: updErr } = await (supabaseService as any)
+    .from('tickets')
+    .update({ status: newStatus, last_activity_at: new Date().toISOString() })
+    .eq('id', ticketId);
+  if (updErr) {
+    logger.error('Failed to update ticket status', updErr);
+  }
+
+  // Send auto-reply when no escalation and platform is telegram
+  if (!triage.escalation) {
+    const { data: ticketRow, error: fetchErr } = await (supabaseService as any)
+      .from('tickets')
+      .select('platform, thread_id')
+      .eq('id', ticketId)
+      .maybeSingle();
+
+    if (fetchErr) {
+      logger.error('Failed to fetch ticket for auto-reply', fetchErr);
+    } else if (ticketRow?.platform === 'telegram' && ticketRow.thread_id) {
+      const [chatId, rootMsgIdStr] = (ticketRow.thread_id as string).split(':');
+      const rootMsgId = rootMsgIdStr ? Number(rootMsgIdStr) : null;
+      void sendTelegramReply(chatId, rootMsgId, triage.answer);
+    }
+  }
+
+  if (triage.escalation) {
+    // Fire escalation flow (non-blocking)
+    void escalateTicket(ticketId);
   }
 }

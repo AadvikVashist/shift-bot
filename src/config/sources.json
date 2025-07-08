@@ -1,0 +1,50 @@
+[
+  {
+    "platform": "slack",
+    "id": "C094TNSAMCL",
+    "name": "klyra-test",
+    "active": true
+  },
+  {
+    "platform": "slack",
+    "id": "C08UE8FSPQT",
+    "name": "emergency-alerts",
+    "active": true
+  },
+  {
+    "platform": "slack",
+    "id": "C08V8V95THC",
+    "name": "frontend-alerts",
+    "active": true
+  },
+  {
+    "platform": "slack",
+    "id": "C08UJPG2L77",
+    "name": "login-alerts",
+    "active": true
+  },
+  {
+    "platform": "slack",
+    "id": "C08UZ5FKJKB",
+    "name": "trade-alerts",
+    "active": true
+  },
+  {
+    "platform": "slack",
+    "id": "C08UL7BJMEE",
+    "name": "ramp-alerts",
+    "active": true
+  },
+  {
+    "platform": "slack",
+    "id": "C093Z6Y45EE",
+    "name": "twap-fill-alerts",
+    "active": true
+  },
+  {
+    "platform": "telegram",
+    "handle": "@klyra_wmw",
+    "name": "Tester",
+    "active": true
+  }
+] 

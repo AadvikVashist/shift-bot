@@ -2,8 +2,9 @@ import { SocketModeClient } from '@slack/socket-mode';
 import { WebClient } from '@slack/web-api';
 import { Logger } from '../helpers/logger';
 import { env } from '../helpers/config/env';
-import { ingestRawNews } from './ingest';
-import { supabaseService } from '../helpers/supabase/client';
+import { ingestUserMessage } from './ingest';
+import fs from 'fs';
+import path from 'path';
 
 const logger = Logger.create('SlackIngestor');
 
@@ -12,40 +13,25 @@ const slackWeb = new WebClient(env.slack.botToken);
 const slackSocket = new SocketModeClient({
   appToken: env.slack.appToken,
   webClient: slackWeb,
-});
+} as any);
 
-// Cache to avoid repeated DB upserts per channel
-const syncedChannels = new Set<string>();
-
-async function upsertNewsSource(channelId: string) {
-  if (syncedChannels.has(channelId)) return;
-  try {
-    const res = await slackWeb.conversations.info({ channel: channelId });
-    const channel: any = (res as any).channel ?? {};
-    const name: string = channel.name ?? channelId;
-
-    await supabaseService.from('news_sources').upsert(
-      {
-        platform: 'slack',
-        source_uid: channelId,
-        handle: name,
-        source_name: `#${name}`,
-        title: name,
-        is_active: true,
-        visibility: 'system',
-      },
-      { onConflict: 'platform,source_uid' },
-    );
-
-    syncedChannels.add(channelId);
-  } catch (err) {
-    logger.warn('Failed to upsert Slack source', { channelId, err });
-  }
+// Load unified sources config
+const sourcesPath = path.join(__dirname, '../config/sources.json');
+interface SourceCfg { platform: string; id?: string; handle?: string; name?: string; active?: boolean }
+let slackSources: SourceCfg[] = [];
+try {
+  const raw = JSON.parse(fs.readFileSync(sourcesPath, 'utf-8')) as SourceCfg[];
+  slackSources = raw.filter((s) => s.platform === 'slack' && (s.active ?? true));
+  logger.info(`Loaded ${slackSources.length} active Slack sources from config`);
+} catch (err) {
+  logger.error('Failed to load sources.json', err);
 }
+
+const allowedChannels = slackSources.map((s) => s.id!);
 
 slackSocket.on('events_api', async ({ envelope_id, payload }) => {
   // Always acknowledge first per Slack docs
-  await slackSocket.ack(envelope_id);
+  await (slackSocket as any).ack(envelope_id);
 
   try {
     const event: any = payload.event;
@@ -53,19 +39,20 @@ slackSocket.on('events_api', async ({ envelope_id, payload }) => {
     if (event?.type !== 'message' || !!event.subtype) return; // ignore bot edits, etc.
 
     const channelId: string = event.channel;
+    if (allowedChannels.length && !allowedChannels.includes(channelId)) {
+      return; // ignore messages from channels not in config
+    }
+
     const text: string = (event.text || '').trim();
     if (!text) return;
 
     // Convert Slack ts (e.g., "1709453961.305609") → epoch ms
     const tsMs = event.ts ? Math.floor(Number(event.ts) * 1000) : Date.now();
 
-    // Ensure the channel exists in our DB, then ingest
-    await upsertNewsSource(channelId);
-
-    await ingestRawNews({
+    await ingestUserMessage({
       platform: 'slack',
-      sourceUid: channelId,
-      sourceTitle: `#${channelId}`,
+      userExternalId: event.user,
+      threadId: `${channelId}:${event.thread_ts ? event.thread_ts : event.ts}`,
       text,
       ts: tsMs,
     });
