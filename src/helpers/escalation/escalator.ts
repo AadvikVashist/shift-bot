@@ -9,7 +9,8 @@ const logger = Logger.create('Escalator');
  * ----------------
  * Handles automatic paging of engineers when a ticket enters `escalation_pending`.
  * Workflow:
- *   1. Build a priority-ordered engineer list: first `active==true`, then `is_on_call==true`.
+ *   1. If **any** engineer has `active == true` escalation is skipped altogether.
+ *      Otherwise we build a list of engineers with `is_on_call == true`.
  *   2. For each engineer we attempt up to `MAX_RETRIES_PER_ENGINEER` calls.
  *   3. Each attempt is logged in `ticket_actions` with `retry_count` and success/failure.
  *   4. Between retries we wait `RETRY_DELAY_MS` to give the callee time to respond.
@@ -119,14 +120,26 @@ async function recordAttempt(
 
 export async function escalateTicket(ticketId: string): Promise<void> {
   const engineers = await fetchEngineers();
-  if (!engineers.length) {
-    logger.warn('No engineers (active or on-call) found, escalation aborted', {
+
+  // 🚦  Abort if there is at least one active engineer online.
+  const activeEngineers = engineers.filter((e) => e.active);
+  if (activeEngineers.length > 0) {
+    logger.info('Active engineers present, skipping escalation', {
       ticketId,
+      activeCount: activeEngineers.length,
     });
     return;
   }
 
-  for (const engineer of engineers) {
+  // From here on we only page on-call engineers.
+  const onCallEngineers = engineers.filter((e) => e.is_on_call);
+
+  if (!onCallEngineers.length) {
+    logger.warn('No on-call engineers found, escalation aborted', { ticketId });
+    return;
+  }
+
+  for (const engineer of onCallEngineers) {
     for (let attempt = 0; attempt < MAX_RETRIES_PER_ENGINEER; attempt++) {
       // Check ticket status before each attempt
       const status = await getTicketStatus(ticketId);

@@ -73,4 +73,40 @@ export async function insertUserMessage(params: {
   if (error) {
     logger.error('insertUserMessage failed', { error, params });
   }
+}
+
+export async function insertSystemEvent(params: {
+  ticketId: string;
+  content: string;
+}): Promise<void> {
+  const { ticketId, content } = params;
+
+  const { error } = await (supabaseService as any).from('ticket_actions').insert({
+    ticket_id: ticketId,
+    action_type: 'system_event',
+    content,
+  });
+
+  if (error) {
+    logger.error('insertSystemEvent failed', { error, params });
+  }
+}
+
+/**
+ * Utility: returns true if at least one engineer row has active == true.
+ */
+export async function isAnyEngineerActive(): Promise<boolean> {
+  const { data, error } = await (supabaseService as any)
+    .from('engineers')
+    .select('id')
+    .eq('active', true)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    logger.error('isAnyEngineerActive: query failed', error);
+    return false;
+  }
+
+  return !!data;
 } 

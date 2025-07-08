@@ -24,7 +24,12 @@ export function useEngineers(): UseEngineersResult {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? ""; // can be empty if same origin
+  // Determine the REST API base URL. When deploying the dashboard alongside the
+  // backend the env var can be omitted and we'll fallback to the browser
+  // origin.  In local development, however, the dashboard usually runs on
+  // http://localhost:3000 while the Express backend listens on 3001, so we
+  // provide that as a sensible default.
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
   const fetchEngineers = useCallback(async () => {
     if (!token) return;

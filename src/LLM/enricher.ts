@@ -2,6 +2,7 @@ import { Logger } from '../helpers/logger';
 import { supabaseService } from '../helpers/supabase/client';
 import { escalateTicket } from '../helpers/escalation/escalator';
 import { sendTelegramReply } from '../helpers/telegram/sender';
+import { isAnyEngineerActive, insertSystemEvent } from '../helpers/db/ingestorDb';
 import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import pLimit from 'p-limit';
@@ -26,6 +27,7 @@ const {
   model: GEMINI_MODEL,
   enabled: GEMINI_ENABLED,
   concurrency: LLM_CONCURRENCY_NUM,
+  escalateAll: GEMINI_ESCALATE_ALL,
 } = env.gemini;
 
 const ENABLED = GEMINI_ENABLED;
@@ -81,7 +83,7 @@ async function enrich({ ticketId, text, platform }: EnqueueArgs): Promise<void> 
           thinkingBudget: 4000,
           includeThoughts: true,
         },
-        temperature: 0.3,
+        temperature: 1.5,
         topP: 1,
         responseMimeType: 'application/json',
         systemInstruction: [{ text: SYSTEM_PROMPT }],
@@ -97,7 +99,13 @@ async function enrich({ ticketId, text, platform }: EnqueueArgs): Promise<void> 
       .map((p: any) => (p.text as string).trim());
     const thinking = thinkingTexts.length ? thinkingTexts.join('\n\n') : null;
 
-    const parsed: TicketTriage = triageSchema.parse(JSON.parse(rawJson));
+    let parsed: TicketTriage = triageSchema.parse(JSON.parse(rawJson));
+
+    // If escalate-all mode is enabled, force escalation flag to true so that
+    // auto-reply is skipped and the escalation workflow is triggered.
+    if (GEMINI_ESCALATE_ALL) {
+      parsed = { ...parsed, escalation: true } as TicketTriage;
+    }
 
     // 2️⃣  Persist to DB
     await persistResults({ ticketId, triage: parsed, thinking });
@@ -140,6 +148,16 @@ async function persistResults({
     .eq('id', ticketId);
   if (updErr) {
     logger.error('Failed to update ticket status', updErr);
+  }
+
+  // 🚦  If any engineer is currently active we skip all automated actions (auto-reply or escalation).
+  const activePresent = await isAnyEngineerActive();
+  if (activePresent) {
+    await insertSystemEvent({
+      ticketId,
+      content: 'Active engineer present; bot actions skipped',
+    });
+    return; // nothing else to do
   }
 
   // Send auto-reply when no escalation and platform is telegram

@@ -31,6 +31,8 @@ const RawEnvSchema = z.object({
   GEMINI_MODEL: z.string().optional().default('gemini-2.5-flash'),
   LLM_ENRICH_ENABLED: z.string().optional().default('1'),
   LLM_CONCURRENCY: z.string().optional().default('3'),
+  // When set truthy ("1", "true"), LLM still runs but all tickets are escalated and no auto-reply is sent
+  LLM_ESCALATE_ALL: z.string().optional().default('0'),
 
   // Slack
   SLACK_BOT_TOKEN: z.string(),
@@ -69,6 +71,10 @@ export const env = {
       parsed.LLM_ENRICH_ENABLED !== '0' &&
       parsed.LLM_ENRICH_ENABLED.toLowerCase() !== 'false',
     concurrency: Number(parsed.LLM_CONCURRENCY),
+    escalateAll:
+      parsed.LLM_ESCALATE_ALL !== undefined &&
+      parsed.LLM_ESCALATE_ALL !== '0' &&
+      parsed.LLM_ESCALATE_ALL.toLowerCase() !== 'false',
   },
 
 } as const;
