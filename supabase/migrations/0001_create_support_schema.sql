@@ -58,6 +58,7 @@ create table public.engineers (
   slack_id      text unique,
   phone_number  text,
   is_on_call    boolean not null default false,
+  active        boolean not null default false,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
