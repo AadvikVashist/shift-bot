@@ -3,6 +3,7 @@ import cors from 'cors';
 import http from 'http';
 import { Logger } from './helpers/logger';
 import { startTelegramIngestor } from './ingestors/telegram';
+import { startSlackIngestor } from './ingestors/slack';
 import { env } from './helpers/config/env';
 import { WebSocketServer } from './websocket/ws-server';
 import newsRouter from './routes/news';
@@ -40,6 +41,8 @@ const main = async () => {
 
   // Start Telegram news ingestor
   void startTelegramIngestor();
+  // Start Slack news ingestor
+  void startSlackIngestor();
 
   // Graceful shutdown handling
   const shutdown = async () => {

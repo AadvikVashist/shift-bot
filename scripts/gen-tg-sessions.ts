@@ -4,21 +4,22 @@ import input from 'input';
 import 'dotenv/config';
 
 (async () => {
-  const { TG_API_ID, TG_API_HASH, TG_PHONE_NUMBER } = process.env;
-  if (!TG_API_ID || !TG_API_HASH || !TG_PHONE_NUMBER) {
-    console.error('❌  TG_API_ID, TG_API_HASH, and PHONE environment variables are required.');
+  const { TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE } = process.env;
+  console.log(TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE);
+  if (!TELEGRAM_API_ID || !TELEGRAM_API_HASH || !TELEGRAM_PHONE) {
+    console.error('❌  TELEGRAM_API_ID, TELEGRAM_API_HASH, and TELEGRAM_PHONE environment variables are required.');
     process.exit(1);
   }
 
   const client = new TelegramClient(
     new StringSession(''),
-    Number(TG_API_ID),
-    TG_API_HASH,
+    Number(TELEGRAM_API_ID),
+    TELEGRAM_API_HASH,
     { connectionRetries: 5 },
   );
 
   await client.start({
-    phoneNumber: () => Promise.resolve(TG_PHONE_NUMBER),
+    phoneNumber: () => Promise.resolve(TELEGRAM_PHONE),
     phoneCode: () => input.text('Telegram code sent by Telegram: '),
     password: () => input.text('2-FA password (if any): ', { masking: true }),
     onError: (err) => console.error(err),

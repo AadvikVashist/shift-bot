@@ -4,7 +4,6 @@ import { WebSocketServer } from '../websocket/ws-server';
 import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import pLimit from 'p-limit';
-import { filterValidCoins, getAllCoins } from '../helpers/coinMapping';
 import { env } from '../helpers/config/env';
 import { getTelegramDigestPrompt } from './prompts/telegramDigestPrompt';
 
@@ -56,9 +55,8 @@ interface SummaryResult {
 // Concurrency limiter
 const limit = pLimit(LLM_CONCURRENCY_NUM);
 
-// Fetch and memoise the full list of supported coin tickers (uppercase)
-// We pass this to the LLM so it can only output coins that our system recognises.
-const VALID_COINS_CSV = getAllCoins().join(', ');
+// Previously we validated against a static list of crypto tickers.
+// For the current bug-tracking context this is unnecessary, so we omit the list.
 
 async function generateSummary(
   text: string,
@@ -67,7 +65,7 @@ async function generateSummary(
   if (!gemini) throw new Error('Gemini disabled');
 
   // ✨ future: choose prompt per platform
-  const SYSTEM_PROMPT = getTelegramDigestPrompt(VALID_COINS_CSV);
+  const SYSTEM_PROMPT = getTelegramDigestPrompt('');
 
   const response: any = await (gemini as any).models.generateContent({
     model: GEMINI_MODEL,
@@ -128,14 +126,8 @@ async function enrich({ rowId, text, platform }: EnqueueArgs): Promise<void> {
     );
     const d = digest.digest[0];
 
-    // Normalise to uppercase and deduplicate before validation
-    const upperCoins = Array.from(new Set(d.coins.map((c) => c.toUpperCase())));
-
-    const validCoins = filterValidCoins(upperCoins);
-    const invalidCoins = upperCoins.filter((c) => !validCoins.includes(c));
-    if (invalidCoins.length) {
-      logger.warn('Dropped invalid coin symbols', { rowId, invalidCoins });
-    }
+    // Keep uppercase deduplicated list (no external validation)
+    const validCoins = Array.from(new Set(d.coins.map((c) => c.toUpperCase())));
 
     const { data: updatedItem, error } = await supabaseService
       .from('news_items')

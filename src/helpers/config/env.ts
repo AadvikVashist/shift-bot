@@ -14,9 +14,9 @@ const RawEnvSchema = z.object({
   PORT: z.string().optional(),
 
   // Telegram
-  TG_API_ID: z.string(),
-  TG_API_HASH: z.string(),
-  SERVICE_SESSION: z.string(),
+  TELEGRAM_API_ID: z.string(),
+  TELEGRAM_API_HASH: z.string(),
+  TELEGRAM_SESSION: z.string(),
 
   // Supabase
   SUPABASE_URL: z.string().url(),
@@ -34,6 +34,10 @@ const RawEnvSchema = z.object({
 
   // Auth
   AUTH_INTROSPECT_URL: z.string().url(),
+
+  // Slack
+  SLACK_BOT_TOKEN: z.string(),
+  SLACK_APP_TOKEN: z.string(),
 });
 
 type RawEnv = z.infer<typeof RawEnvSchema>;
@@ -44,15 +48,20 @@ export const env = {
   port: Number(parsed.PORT ?? 3001),
 
   telegram: {
-    apiId: Number(parsed.TG_API_ID),
-    apiHash: parsed.TG_API_HASH,
-    session: parsed.SERVICE_SESSION,
+    apiId: Number(parsed.TELEGRAM_API_ID),
+    apiHash: parsed.TELEGRAM_API_HASH,
+    session: parsed.TELEGRAM_SESSION,
   },
 
   supabase: {
     url: parsed.SUPABASE_URL,
     anonKey: parsed.SUPABASE_ANON_KEY,
     serviceRoleKey: parsed.SUPABASE_SERVICE_ROLE_KEY,
+  },
+
+  slack: {
+    botToken: parsed.SLACK_BOT_TOKEN,
+    appToken: parsed.SLACK_APP_TOKEN,
   },
 
   gemini: {
