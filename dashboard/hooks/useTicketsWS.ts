@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Ticket } from '@/components/ui/TicketTable';
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 
 interface WSMessage {
   type: 'baseline' | 'new_item' | 'ping' | string;
@@ -14,9 +15,15 @@ function severityLabel(num?: number | null): Ticket['severity'] {
   return 'low';
 }
 
-export function useTicketsWS(token?: string) {
+export function useTicketsWS(authToken?: string) {
+  const { token: fallbackToken } = useSupabaseAuth();
+  const token = authToken ?? fallbackToken ?? undefined;
+
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Determine REST API base URL (same logic as useEngineers)
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
 
   useEffect(() => {
     // Only establish a websocket connection once we have a valid token.
@@ -50,7 +57,35 @@ export function useTicketsWS(token?: string) {
     };
   }, [token]);
 
-  return tickets;
+  // Mutation: close a ticket
+  const closeTicket = useCallback(
+    async (id: string) => {
+      if (!token) return;
+      try {
+        const res = await fetch(`${API_BASE}/tickets/${id}/status`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-auth-token': token,
+          },
+          body: JSON.stringify({ status: 'closed' }),
+        });
+        if (!res.ok) {
+          throw new Error(await res.text());
+        }
+        // Optimistically update local state
+        setTickets((prev) => prev.map((t) => (t.id === id ? { ...t, status: 'closed' } : t)));
+      } catch (err) {
+        console.error('Failed to close ticket', err);
+      }
+    },
+    [token, API_BASE],
+  );
+
+  return {
+    tickets,
+    closeTicket,
+  };
 }
 
 function mapRows(rows: any[]): Ticket[] {

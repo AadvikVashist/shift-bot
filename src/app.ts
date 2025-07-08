@@ -6,6 +6,7 @@ import { startTelegramIngestor } from './ingestors/telegram';
 import { startSlackIngestor } from './ingestors/slack';
 import { env } from './helpers/config/env';
 import engineersRouter from './routes/engineers';
+import ticketsRouter from './routes/tickets';
 import { initWebSocketServer, getWebSocketServer } from './websocket/ws-server';
 
 
@@ -28,6 +29,9 @@ const main = async () => {
 
   // Engineers management API
   app.use('/engineers', engineersRouter);
+
+  // Ticket management API
+  app.use('/tickets', ticketsRouter);
 
 
   // Initialize HTTP server

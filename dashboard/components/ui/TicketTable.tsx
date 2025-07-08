@@ -13,6 +13,7 @@ import {
   Search,
   Filter,
   ChevronRight,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ interface TicketTableProps {
   onRowClick?: (id: string) => void;
   loading?: boolean;
   error?: string;
+  onCloseTicket?: (id: string) => void;
 }
 
 type SortField = keyof Ticket;
@@ -57,6 +59,7 @@ const TicketTable: React.FC<TicketTableProps> = ({
   onRowClick = () => {},
   loading = false,
   error = "",
+  onCloseTicket,
 }) => {
   const [sortField, setSortField] = useState<SortField>("lastActivity");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -270,13 +273,14 @@ const TicketTable: React.FC<TicketTableProps> = ({
                   </Button>
                 </TableHead>
               ))}
+              <TableHead className="w-[100px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
             {sortedTickets.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
+                <TableCell colSpan={8} className="h-24 text-center">
                   <div className="flex flex-col items-center justify-center text-muted-foreground">
                     <AlertCircle className="h-8 w-8 mb-2" />
                     <p className="text-sm">No tickets found</p>
@@ -339,10 +343,26 @@ const TicketTable: React.FC<TicketTableProps> = ({
                       <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                         {formatLastActivity(ticket.lastActivity)}
                       </TableCell>
+                      <TableCell>
+                        {ticket.status !== "closed" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onCloseTicket?.(ticket.id);
+                            }}
+                          >
+                            <X className="h-3 w-3 mr-1" /> Close
+                          </Button>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">Closed</span>
+                        )}
+                      </TableCell>
                     </TableRow>
                     {isExpanded && (
                       <TableRow className="hover:bg-transparent">
-                        <TableCell colSpan={7} className="bg-muted/10 p-0">
+                        <TableCell colSpan={8} className="bg-muted/10 p-0">
                           <div className="p-4 text-sm border-t border-border">
                             <h4 className="font-medium mb-2 text-foreground">Ticket History</h4>
                             {actions.length === 0 ? (

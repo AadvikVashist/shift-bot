@@ -69,6 +69,23 @@ export function enqueueEnrichment(args: EnqueueArgs): Promise<void> {
 // Core enrichment logic
 // ---------------------------------------------------------------------------
 async function enrich({ ticketId, text, platform }: EnqueueArgs): Promise<void> {
+  // 🚫 Skip enrichment if the ticket has been closed in the meantime
+  try {
+    const { data: statusRow, error: statusErr } = await (supabaseService as any)
+      .from('tickets')
+      .select('status')
+      .eq('id', ticketId)
+      .maybeSingle();
+    if (statusErr) {
+      logger.error('Failed to fetch ticket status', statusErr);
+    }
+    if (statusRow?.status === 'closed') {
+      logger.info('Skipping enrichment for closed ticket', { ticketId });
+      return;
+    }
+  } catch (err) {
+    logger.error('Status check before enrichment failed', err);
+  }
   try {
     // 1️⃣  Invoke Gemini
     const SYSTEM_PROMPT = getTicketTriagePrompt();
