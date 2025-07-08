@@ -44,6 +44,12 @@
   {
     "platform": "telegram",
     "handle": "@klyra_wmw",
+    "name": "Tester Acct",
+    "active": true
+  },
+  {
+    "platform": "telegram",
+    "chatid": "4933110758",
     "name": "Tester",
     "active": true
   }

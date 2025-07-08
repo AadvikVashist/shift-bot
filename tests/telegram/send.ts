@@ -8,11 +8,11 @@ import { sendTelegramReply } from '../../src/helpers/telegram/sender';
     process.exit(1);
   }
 
-  const [chatId, ...messageParts] = args;
+  const [peerKey, ...messageParts] = args;
   const message = messageParts.join(' ');
 
   try {
-    await sendTelegramReply(chatId, null, message);
+    await sendTelegramReply(peerKey, null, message);
     console.log('✅  Message sent');
   } catch (err) {
     console.error('❌  Failed to send message:', err);

@@ -1,11 +1,12 @@
-import { TelegramClient } from 'telegram';
+import { Api, TelegramClient } from 'telegram';
 // client provided via helper
 import { NewMessage } from 'telegram/events';
 import { Logger } from '../helpers/logger';
 import fs from 'fs';
 import path from 'path';
-import { Api } from 'telegram';
 import { ingestUserMessage } from './ingest';
+import bigInt from 'big-integer';
+import { serialiseInputPeer } from '../helpers/telegram/peers';
 import { getTelegramClient } from '../helpers/telegram/client';
 
 const logger = Logger.create('TelegramIngestor');
@@ -14,12 +15,13 @@ let client: TelegramClient; // will be initialised in startTelegramIngestor
 
 // load unified sources config
 const sourcesPath = path.join(__dirname, '../config/sources.json');
-interface SourceCfg { platform: string; handle?: string; name?: string; active?: boolean }
-let telegramChannels: Array<SourceCfg & { handle: string }> = [];
+interface SourceCfg { platform: string; handle?: string; chatid?: string; name?: string; active?: boolean }
+let telegramChannels: Array<SourceCfg & { handle?: string; chatid?: string }> = [];
 try {
   const raw = JSON.parse(fs.readFileSync(sourcesPath, 'utf-8')) as SourceCfg[];
   telegramChannels = raw.filter(
-    (s): s is SourceCfg & { handle: string } => s.platform === 'telegram' && !!s.handle && (s.active ?? true),
+    (s): s is SourceCfg & { handle?: string; chatid?: string } =>
+      s.platform === 'telegram' && !!(s.handle || s.chatid) && (s.active ?? true),
   );
   logger.info(`Loaded ${telegramChannels.length} active Telegram channels from config`);
 } catch (err) {
@@ -27,113 +29,89 @@ try {
   telegramChannels = [];
 }
 
+// We will populate these after helper functions are defined to avoid forward reference errors
 const allowedHandles = new Set<string>();
 const allowedChatIds = new Set<string>();
+const allowedTitles = new Set<string>();
 
-// Populate allowedHandles from config immediately
-for (const ch of telegramChannels) {
-  if (ch.handle) {
-    const normalized = ch.handle.replace(/^@/, '').toLowerCase();
-    allowedHandles.add(normalized);
-  }
-}
+// (to be executed after helper fn declarations)
 
-async function syncSeedChannels(client: TelegramClient) {
-  logger.info(`Syncing ${telegramChannels.length} Telegram channels`);
-  for (const seed of telegramChannels) {
-    const { handle, name } = seed;
-    let active = seed.active !== false; // default true unless explicitly false
-
-    // First resolve the handle – this tells us whether it is a Channel / Super-group, Group or User
-    let entity: any = null;
-    try {
-      entity = await client.getEntity(handle);
-    } catch (err) {
-      logger.warn('[seed] failed to resolve entity for', handle, err);
-    }
-
-    const isJoinableChannel = entity && 'channelId' in entity; // Channels & super-groups expose channelId
-
-    if (isJoinableChannel) {
-      // Attempt to join only if we are dealing with a channel / super-group
-      try {
-        await client.invoke(new Api.channels.JoinChannel({ channel: handle }));
-        logger.info('[seed] joined', handle);
-      } catch (err: any) {
-        const msg = err?.message ?? '';
-        if (!msg.includes('USER_ALREADY_PARTICIPANT')) {
-          // Any other error means the channel isn’t available for this account → deactivate
-          logger.warn('[seed] failed to join', handle, msg);
-          active = false;
-        }
-      }
-    } else {
-      // Not a public channel – nothing to join, but we still treat it as active so we can ingest messages
-      logger.debug('[seed] handle not joinable (likely user or basic group), skipping join', handle);
-    }
-
-    // Ensure we have a numeric chatId & title for reference
-    try {
-      if (!entity) {
-        entity = await client.getEntity(handle);
-      }
-      const chatId = entity?.id ? entity.id.toString() : undefined;
-      const title = entity?.title ?? handle;
-      if (!chatId) {
-        logger.warn('[seed] missing chatId for', handle);
-      }
-      // Cache chatId as allowed if obtained
-      if (chatId) {
-        allowedChatIds.add(normalizeChatId(chatId));
-      }
-      // Note: no DB source upsert needed for support schema (handled elsewhere)
-    } catch (err) {
-      logger.debug('[seed] failed to resolve entity for', handle, err);
-    }
-  }
-}
 
 // Cache chatId → username lookups to avoid hitting Telegram API repeatedly
 const chatIdUsernameCache = new Map<string, string>();
 
 async function resolveUsername(client: TelegramClient, chatId: string): Promise<string | null> {
   if (chatIdUsernameCache.has(chatId)) return chatIdUsernameCache.get(chatId)!;
-  try {
-    const entity = await client.getEntity(chatId);
-    // Channels / supergroups have .username; groups/users might not.
-    // entity can be Api.Channel or other variants
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    const username: string | undefined = entity.username;
-    if (username) {
-      chatIdUsernameCache.set(chatId, username);
-      return username;
+
+  const tryResolve = async (peer: any): Promise<string | null> => {
+    try {
+      const ent: any = await client.getEntity(peer);
+      if (ent?.username) return ent.username as string;
+    } catch {
+      /* ignore */
     }
-  } catch (err: any) {
-    logger.debug(`Failed to resolve username for chatId ${chatId}`, err);
+    return null;
+  };
+
+  let username: string | null = null;
+  if (/^-100\d+/.test(chatId)) {
+    username = await tryResolve(new Api.PeerChannel({ channelId: bigInt(chatId.slice(4)) }));
+  } else if (/^-\d+/.test(chatId)) {
+    username = await tryResolve(new Api.PeerChat({ chatId: bigInt(chatId.slice(1)) }));
+  } else {
+    username = await tryResolve(new Api.PeerUser({ userId: bigInt(chatId) }));
   }
+
+  if (username) {
+    chatIdUsernameCache.set(chatId, username);
+    return username;
+  }
+
+  // No luck – silently ignore to avoid noisy logs.
   return null;
 }
 
-// Helper: extract chat ID from a variety of Telegram message shapes
+// Extract Telegram numeric ID – preserve prefixes ("-100" for channels, "-" for basic groups)
 const getRawChatId = (msg: any): string | null => {
-  if (msg?.chatId) return msg.chatId.toString();
+  if (msg?.chatId !== undefined) return msg.chatId.toString();
   const peer = msg?.peerId;
   if (!peer) return null;
-  // Telegram TL objects use different property names depending on peer type
-  if ('channelId' in peer && peer.channelId) return peer.channelId.toString();
-  if ('chatId' in peer && peer.chatId) return peer.chatId.toString();
-  if ('userId' in peer && peer.userId) return peer.userId.toString();
+  if ('channelId' in peer && peer.channelId !== undefined) return `-100${peer.channelId.toString()}`;
+  if ('chatId' in peer && peer.chatId !== undefined) return `-${peer.chatId.toString()}`;
+  if ('userId' in peer && peer.userId !== undefined) return peer.userId.toString();
   return null;
 };
-
-// Normalise chat IDs so that –1001380328653 → 1380328653, etc.
+// Normalise chat IDs (strip sign/prefix) for config matching only
 const normalizeChatId = (id: string): string => {
-  if (id.startsWith('-100')) return id.slice(4);
-  if (id.startsWith('100')) return id.slice(3);
-  if (id.startsWith('-')) return id.slice(1);
-  return id;
+  return id.replace(/^-100|^-/, '');
 };
+
+// Robustly resolve an InputPeer for a given numeric chatId, trying channel → chat → user.
+async function safeGetInputPeer(client: TelegramClient, chatId: string) {
+  if (/^-100\d+/.test(chatId)) {
+    return client.getInputEntity(new Api.PeerChannel({ channelId: bigInt(chatId.slice(4)) }));
+  }
+  if (/^-\d+/.test(chatId)) {
+    return client.getInputEntity(new Api.PeerChat({ chatId: bigInt(chatId.slice(1)) }));
+  }
+  // Positive → user DM
+  return client.getInputEntity(new Api.PeerUser({ userId: bigInt(chatId) }));
+}
+
+// Now that normalisation helper exists, populate allowed sets
+for (const ch of telegramChannels) {
+  if (ch.handle) {
+    const normalized = ch.handle.replace(/^@/, '').toLowerCase();
+    allowedHandles.add(normalized);
+  }
+  if (ch.chatid) {
+    allowedChatIds.add(normalizeChatId(ch.chatid));
+  }
+  if (ch.name) {
+    allowedTitles.add(ch.name.toLowerCase());
+  }
+}
+
 
 function attachMessageHandler(client: TelegramClient) {
   client.addEventHandler(async (ev: any) => {
@@ -153,31 +131,46 @@ function attachMessageHandler(client: TelegramClient) {
         return;
       }
 
-      const chatId = normalizeChatId(rawChatId);
+      // Keep the raw chat-id (with possible - / -100 prefix) for all Telegram API calls,
+      // but still derive a normalised version **only** for matching against our allow-list.
+      const chatIdNormalised = normalizeChatId(rawChatId);
 
       // Attempt to resolve @handle – first via payload, then via cache/API
       let handle: string | null | undefined = raw.chat?.username;
       if (!handle) {
-        handle = await resolveUsername(client, chatId);
+        handle = await resolveUsername(client, rawChatId);
       }
       if (handle) {
         handle = handle.replace(/^@/, '').toLowerCase();
       }
 
-      // Filter: message must originate from configured source
-      const fromAllowedChat = allowedChatIds.has(chatId);
+      const title = raw.chat?.title ?? handle ?? chatIdNormalised;
+
+      // Filter: message must originate from configured source (handle, chatId, or title)
+      const fromAllowedChat = allowedChatIds.has(chatIdNormalised);
       const fromAllowedHandle = handle ? allowedHandles.has(handle) : false;
-      if (!fromAllowedChat && !fromAllowedHandle) {
-        logger.debug('Skipping message from unconfigured chat', { chatId, handle, text });
+      const fromAllowedTitle = title ? allowedTitles.has(title.toLowerCase()) : false;
+      if (!fromAllowedChat && !fromAllowedHandle && !fromAllowedTitle) {
+        logger.debug('Skipping message from unconfigured chat', { chatId: chatIdNormalised, handle, title, text });
         return;
       }
 
-      const title = raw.chat?.title ?? handle ?? chatId;
+      // Build peer key from InputPeer for robust referencing
+      let inputPeerKey: string | null = null;
+      try {
+        const inputPeer = await safeGetInputPeer(client, rawChatId);
+        inputPeerKey = serialiseInputPeer(inputPeer as any);
+      } catch (err) {
+        // Fallback: use normalised chatId so legacy code still functions
+        logger.debug('Failed to obtain InputPeer, falling back to chatId string', err);
+        // Keep the raw chat-id (with prefix) so we don’t lose type information
+        inputPeerKey = rawChatId;
+      }
 
       ingestUserMessage({
         platform: 'telegram',
         userExternalId: raw.fromId?.userId?.toString() ?? 'unknown',
-        threadId: `${chatId}:${raw.replyTo?.replyToMsgId ?? raw.id}`,
+        threadId: `${inputPeerKey}:${raw.replyTo?.replyToMsgId ?? raw.id}`,
         text,
         ts,
       });
@@ -189,7 +182,6 @@ function attachMessageHandler(client: TelegramClient) {
 
 export async function startTelegramIngestor() {
   client = await getTelegramClient();
-  await syncSeedChannels(client);
   attachMessageHandler(client);
   logger.info('Telegram ingestor running');
 } 

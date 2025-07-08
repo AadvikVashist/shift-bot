@@ -153,9 +153,16 @@ async function persistResults({
     if (fetchErr) {
       logger.error('Failed to fetch ticket for auto-reply', fetchErr);
     } else if (ticketRow?.platform === 'telegram' && ticketRow.thread_id) {
-      const [chatId, rootMsgIdStr] = (ticketRow.thread_id as string).split(':');
+      const thread = ticketRow.thread_id as string;
+      // The new format stores peerKey:rootMsgId where peerKey itself may contain ':'
+      const lastColon = thread.lastIndexOf(':');
+      if (lastColon === -1) return;
+
+      const peerKey = thread.slice(0, lastColon);
+      const rootMsgIdStr = thread.slice(lastColon + 1);
+
       const rootMsgId = rootMsgIdStr ? Number(rootMsgIdStr) : null;
-      void sendTelegramReply(chatId, rootMsgId, triage.answer);
+      void sendTelegramReply(peerKey, rootMsgId, triage.answer);
     }
   }
 
